@@ -83,7 +83,7 @@ class Ai(GroupCog, name="cloudflareai"):
     ):
         if isinstance(error, app_commands.CommandOnCooldown):
             await interaction.response.send(
-                f"This command is on cooldown, please try again in {error.retry_after:.2f} seconds."
+                content=f"This command is on cooldown, please try again in {error.retry_after:.2f} seconds."
             )
             self.client.log.error(f"An error occurred: {error}")
 
@@ -105,7 +105,6 @@ class Ai(GroupCog, name="cloudflareai"):
           data = await self.ai.TextGeneration(
               prompt=user_prompt, system_prompt=system_prompt, model_name=model
           )
-          self.client.log.info(data.text)
           if data.status_code != 200:
               await interaction.edit_original_response(
                   f"The Cloudflare AI returned an error: {data.status_code} {data.reason}"
@@ -130,54 +129,79 @@ class Ai(GroupCog, name="cloudflareai"):
 
     @command(name="image_classification")
     @app_commands.describe(image="The image to classify.")
+    @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
     async def image_classification(
         self,
         interaction: discord.Interaction,
         image: discord.Attachment,
     ) -> None:
         """Classify an image."""
+
+        await interaction.response.defer()
+        if image.content_type != "image/png" and image.content_type != "image/jpeg":
+            await interaction.edit_original_response(
+                content=f"Invalid file type, please upload a PNG or JPEG image"
+            )
+            return
         try:
             image_data = await image.read()
             data = await self.ai.ImageClassification(image_data, model_name=AiImageClassificationModels.RESNET_50)
-            await interaction.response.send_message(data)
+            await interaction.edit_original_response(content=data.labels)
             if data.status_code != 200:
-                await interaction.response.send_message(
-                    f"The Cloudflare AI returned an error: {data.status_code} {data.reason}"
+                await interaction.edit_original_response(
+                    content=f"The Cloudflare AI returned an error: {data.status_code} {data.reason}"
                 )
                 return
         except Exception as e:
             self.client.log.error(f"An error occurred: {e}")
-            await interaction.response.send_message(
-                f"An error occurred, please try again later"
+            await interaction.edit_original_response(
+                content="An error occurred, please try again later"
+            )
+
+    @image_classification.error
+    async def image_classification_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send(
+                f"This command is on cooldown, please try again in {error.retry_after:.2f} seconds."
             )
 
     @command(name="speech_recognition")
     @app_commands.describe(audio_file="The audio file to recognize speech from.")
+    @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
     async def speech_recognition(
         self,
         interaction: discord.Interaction,
         audio_file: discord.Attachment,
     ) -> None:
         """Recognize speech from an audio file."""
+        await interaction.response.defer()
         try:
-            audio = await audio.read()
-            data = await self.ai.SpeechRecognition(audio_file, model_name=AiSpeechRecognitionModels.WHISPER)
-            await interaction.response.send_message(data)
+            audio = await audio_file.read()
+            data = await self.ai.SpeechRecognition(audio, model_name=AiSpeechRecognitionModels.WHISPER)
             if data.status_code != 200:
-                await interaction.response.send_message(
-                    f"The Cloudflare AI returned an error: {data.status_code} {data.reason}"
+                await interaction.edit_original_response(
+                    content=f"The Cloudflare AI returned an error: {data.status_code} {data.reason}"
                 )
                 return
+            await interaction.edit_original_response(content=data.text)
         except Exception as e:
             self.client.log.error(f"An error occurred: {e}")
-            await interaction.response.send_message(
-                f"An error occurred, please try again later"
+            await interaction.edit_original_response(
+                content=f"An error occurred, please try again later"
+            )
+    
+    @speech_recognition.error
+    async def speech_recognition_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send(
+                f"This command is on cooldown, please try again in {error.retry_after:.2f} seconds."
             )
 
     @command(name="translation")
     @app_commands.describe(text="The text to translate.")
     @app_commands.describe(source_language="The source language.")
     @app_commands.describe(target_language="The target language.")
+    @app_commands.checks.cooldown(1, 5.0, key=lambda i: (i.guild_id, i.user.id))
     async def translation(
         self,
         interaction: discord.Interaction,
@@ -203,9 +227,16 @@ class Ai(GroupCog, name="cloudflareai"):
         except Exception as e:
             self.client.log.error(f"An error occurred: {e}")
             await interaction.edit_original_response(
-                f"An error occurred, please try again later"
+                content=f"An error occurred, please try again later"
             )
             return
+    
+    @translation.error
+    async def translation_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send(
+                f"This command is on cooldown, please try again in {error.retry_after:.2f} seconds."
+            )
 
 async def setup(client: discord.commands.Bot) -> None:
     await client.add_cog(Ai(client))
